@@ -1,0 +1,5 @@
+{
+  "name": "ChemReact AI 3D",
+  "description": "An interactive chemistry playground where users build molecules, simulate reactions using Gemini AI, and visualize the resulting chemical products.",
+  "requestFramePermissions": []
+}
