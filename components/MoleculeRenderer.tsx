@@ -43,6 +43,7 @@ const AtomMesh: React.FC<{
   onPointerOut: (e: ThreeEvent<PointerEvent>) => void;
 }> = ({ atom, isSelected, isHovered, mode, onClick, onPointerDown, onPointerOver, onPointerOut }) => {
   const style = useMemo(() => getElementStyle(atom.element), [atom.element]);
+  const def = ELEMENT_DATA_MAP[atom.element];
   const color = style.bg;
   const radius = (style.radius || 20) / 40; // Scale down for 3D world space (approx 0.5 - 1.0 units)
 
@@ -73,6 +74,36 @@ const AtomMesh: React.FC<{
       >
         {atom.element}
       </Text>
+
+      {/* 3D Tooltip */}
+      {isHovered && def && mode !== 'erase' && (
+         <Html position={[0, radius, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[100, 0]}>
+            <div className="w-48 p-3 bg-slate-900/95 text-white text-xs rounded-lg shadow-xl backdrop-blur-sm border border-slate-700 -translate-x-1/2 -translate-y-full mb-3">
+                <div className="flex items-center justify-between border-b border-slate-600 pb-2 mb-2">
+                   <span className="font-bold text-sm">{def.name}</span>
+                   <span className="font-mono text-lg font-bold text-slate-400">{atom.element}</span>
+                </div>
+                <div className="space-y-1">
+                   <div className="flex justify-between">
+                     <span className="text-slate-400">Atomic No.</span>
+                     <span className="font-mono">{def.atomicNumber}</span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span className="text-slate-400">Mass</span>
+                     <span className="font-mono">{def.mass}</span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span className="text-slate-400">Pos</span>
+                     <span className="font-mono opacity-70">
+                        {atom.x.toFixed(1)}, {atom.y.toFixed(1)}, {(atom.z || 0).toFixed(1)}
+                     </span>
+                   </div>
+                </div>
+                {/* Arrow at bottom */}
+                <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900/95"></div>
+            </div>
+         </Html>
+      )}
     </group>
   );
 };
@@ -237,12 +268,13 @@ const SceneContent: React.FC<{
     onAtomClick: (atomId: string) => void;
     onBondClick: (bondId: string) => void;
     selectedAtomId: string | null;
+    hoveredAtomId: string | null;
     setHoveredAtomId: (id: string | null) => void;
     orbitEnabled: boolean;
     setOrbitEnabled: (enabled: boolean) => void;
 }> = ({ 
     molecule, interactive, mode, onAtomUpdate, onAtomClick, onBondClick, 
-    selectedAtomId, setHoveredAtomId, orbitEnabled, setOrbitEnabled 
+    selectedAtomId, hoveredAtomId, setHoveredAtomId, orbitEnabled, setOrbitEnabled 
 }) => {
     const { camera, gl } = useThree();
     const draggingIdRef = useRef<string | null>(null);
@@ -332,7 +364,7 @@ const SceneContent: React.FC<{
                     key={atom.id} 
                     atom={atom} 
                     isSelected={selectedAtomId === atom.id}
-                    isHovered={false} 
+                    isHovered={hoveredAtomId === atom.id} 
                     mode={mode}
                     onClick={(e) => { 
                         if (!draggingIdRef.current) {
@@ -341,8 +373,18 @@ const SceneContent: React.FC<{
                         }
                     }}
                     onPointerDown={(e) => handlePointerDown(e, atom.id)}
-                    onPointerOver={(e) => { e.stopPropagation(); setHoveredAtomId(atom.id); }}
-                    onPointerOut={(e) => { e.stopPropagation(); setHoveredAtomId(null); }}
+                    onPointerOver={(e) => { 
+                        if (interactive) {
+                            e.stopPropagation(); 
+                            setHoveredAtomId(atom.id); 
+                        }
+                    }}
+                    onPointerOut={(e) => { 
+                        if (interactive) {
+                            e.stopPropagation(); 
+                            setHoveredAtomId(null); 
+                        }
+                    }}
                 />
             ))}
             {molecule.bonds.map(bond => (
@@ -448,14 +490,6 @@ const MoleculeRenderer: React.FC<MoleculeRendererProps> = ({
       }
   };
 
-  // Tooltip Logic
-  const hoveredAtomData = useMemo(() => {
-     if (!hoveredAtomId) return null;
-     const atom = internalMolecule.atoms.find(a => a.id === hoveredAtomId);
-     if (!atom) return null;
-     return { atom, def: ELEMENT_DATA_MAP[atom.element] };
-  }, [hoveredAtomId, internalMolecule]);
-
   return (
     <div className="relative rounded-lg overflow-hidden bg-slate-50 border border-slate-200" style={{ width, height }}>
         {internalMolecule.atoms.length === 0 && (
@@ -478,6 +512,7 @@ const MoleculeRenderer: React.FC<MoleculeRendererProps> = ({
                 onAtomClick={handleAtomClick}
                 onBondClick={handleBondClick}
                 selectedAtomId={selectedAtomId}
+                hoveredAtomId={hoveredAtomId}
                 setHoveredAtomId={setHoveredAtomId}
                 orbitEnabled={orbitEnabled}
                 setOrbitEnabled={setOrbitEnabled}
@@ -504,32 +539,6 @@ const MoleculeRenderer: React.FC<MoleculeRendererProps> = ({
                {/* Controls handled natively by OrbitControls, these could be custom triggers or removed */}
                <div className="text-[10px] text-slate-400 text-center px-1">Rotate / Zoom</div>
             </div>
-        )}
-
-        {/* Tooltip Overlay */}
-        {hoveredAtomData && (
-             <div className="absolute top-4 right-4 z-20 pointer-events-none w-48 p-3 bg-slate-900/90 text-white text-xs rounded-lg shadow-xl backdrop-blur-sm border border-slate-700 animate-in fade-in zoom-in-95 duration-100">
-                <div className="flex items-center justify-between border-b border-slate-600 pb-2 mb-2">
-                   <span className="font-bold text-sm">{hoveredAtomData.def.name}</span>
-                   <span className="font-mono text-lg font-bold text-slate-400">{hoveredAtomData.atom.element}</span>
-                </div>
-                <div className="space-y-1">
-                   <div className="flex justify-between">
-                     <span className="text-slate-400">Atomic No.</span>
-                     <span className="font-mono">{hoveredAtomData.def.atomicNumber}</span>
-                   </div>
-                   <div className="flex justify-between">
-                     <span className="text-slate-400">Mass</span>
-                     <span className="font-mono">{hoveredAtomData.def.mass}</span>
-                   </div>
-                   <div className="flex justify-between">
-                     <span className="text-slate-400">Pos</span>
-                     <span className="font-mono opacity-70">
-                        {hoveredAtomData.atom.x.toFixed(1)}, {hoveredAtomData.atom.y.toFixed(1)}, {(hoveredAtomData.atom.z || 0).toFixed(1)}
-                     </span>
-                   </div>
-                </div>
-             </div>
         )}
 
         {!interactive && showMoleculeName && (
