@@ -6,7 +6,7 @@ import MoleculeRenderer from './MoleculeRenderer';
 import { getAccurate3DStructure } from '../services/geminiService';
 import { identifyMolecule } from '../services/geminiService';
 import PeriodicTable from './PeriodicTable';
-import { Trash2, Save, Undo, Eraser, MousePointer2, FolderOpen, X, Search, Wand2, TableProperties, Loader2 } from 'lucide-react';
+import { Trash2, Save, Undo, Eraser, MousePointer2, FolderOpen, X, Search, Wand2, TableProperties, Loader2, Info, HelpCircle } from 'lucide-react';
 
 interface BuilderProps {
   onSave: (molecule: Molecule) => void;
@@ -29,6 +29,7 @@ const Builder: React.FC<BuilderProps> = ({ onSave, savedMolecules, onDelete }) =
   const [isPeriodicTableOpen, setIsPeriodicTableOpen] = useState(false);
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [isLayoutLoading, setIsLayoutLoading] = useState(false);
+  const [showHints, setShowHints] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [saveName, setSaveName] = useState('');
   const [hoveredElement, setHoveredElement] = useState<string | null>(null);
@@ -310,6 +311,55 @@ const Builder: React.FC<BuilderProps> = ({ onSave, savedMolecules, onDelete }) =
                     placeholder="Molecule Name"
                  />
                </div>
+
+               {/* Interactive Hints Overlay */}
+               {showHints ? (
+                 <div className="absolute top-4 left-4 z-40 w-64 bg-white/95 backdrop-blur shadow-lg border border-slate-200 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                   <div className="flex justify-between items-start mb-3 border-b border-slate-100 pb-2">
+                     <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-600 flex items-center gap-2">
+                       <Info size={14} /> Quick Guide
+                     </h4>
+                     <button 
+                       onClick={() => setShowHints(false)}
+                       className="text-slate-400 hover:text-slate-600 transition-colors"
+                     >
+                       <X size={14} />
+                     </button>
+                   </div>
+                   <ul className="space-y-2.5">
+                      <li className="flex gap-3 text-xs text-slate-600">
+                        <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 font-bold border border-indigo-100">1</div>
+                        <div>
+                          <span className="font-semibold text-slate-800 block mb-0.5">Add Atom</span>
+                          Click any element in the toolbar.
+                        </div>
+                      </li>
+                      <li className="flex gap-3 text-xs text-slate-600">
+                        <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 font-bold border border-indigo-100">2</div>
+                        <div>
+                          <span className="font-semibold text-slate-800 block mb-0.5">Create Bond</span>
+                          Click one atom, then click another.
+                        </div>
+                      </li>
+                      <li className="flex gap-3 text-xs text-slate-600">
+                        <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 font-bold border border-indigo-100">3</div>
+                        <div>
+                          <span className="font-semibold text-slate-800 block mb-0.5">Edit Bond Type</span>
+                          Click an existing bond to cycle (Single → Double → Triple).
+                        </div>
+                      </li>
+                   </ul>
+                 </div>
+               ) : (
+                 <button 
+                   onClick={() => setShowHints(true)}
+                   className="absolute top-4 left-4 z-40 p-2 bg-white text-slate-400 hover:text-indigo-600 rounded-full shadow-md border border-slate-200 transition-all hover:scale-105"
+                   title="Show Hints"
+                 >
+                   <HelpCircle size={20} />
+                 </button>
+               )}
+
              </div>
           </div>
         </div>

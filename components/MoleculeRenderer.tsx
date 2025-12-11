@@ -5,7 +5,7 @@ import { OrbitControls, Text, Html, Environment, ContactShadows, Grid } from '@r
 import * as THREE from 'three';
 import { Molecule, AtomData, BondData } from '../types';
 import { getElementStyle, ELEMENT_DATA_MAP } from '../constants';
-import { ZoomIn, ZoomOut, Maximize, Loader2, Atom as AtomIcon } from 'lucide-react';
+import { Atom as AtomIcon } from 'lucide-react';
 import { ThreeElements } from '@react-three/fiber';
 
 // Augment the global JSX namespace with R3F elements to fix TS errors in XML output
@@ -320,9 +320,14 @@ const SceneContent: React.FC<{
         raycaster.setFromCamera(new THREE.Vector2(x, y), cameraRef.current);
         
         const intersectPoint = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(dragPlane.current, intersectPoint)) {
+        // Check if ray hits the virtual drag plane
+        const hit = raycaster.ray.intersectPlane(dragPlane.current, intersectPoint);
+        
+        if (hit) {
              const newPos = new THREE.Vector3().addVectors(intersectPoint, dragOffset.current);
-             onAtomUpdateRef.current(draggingIdRef.current, newPos);
+             if (draggingIdRef.current) {
+                 onAtomUpdateRef.current(draggingIdRef.current, newPos);
+             }
         }
     }, []);
 
@@ -331,11 +336,13 @@ const SceneContent: React.FC<{
         setOrbitEnabled(true);
         window.removeEventListener('pointermove', onGlobalPointerMove);
         window.removeEventListener('pointerup', onGlobalPointerUp);
-        // Release pointer capture if it was set on the canvas
-        if (glRef.current.domElement.hasPointerCapture(event.pointerId)) {
-             glRef.current.domElement.releasePointerCapture(event.pointerId);
+        
+        // Release pointer capture safely
+        const canvas = glRef.current.domElement;
+        if (canvas && canvas.hasPointerCapture && canvas.hasPointerCapture(event.pointerId)) {
+             canvas.releasePointerCapture(event.pointerId);
         }
-    }, [onGlobalPointerMove, setOrbitEnabled]);
+    }, [setOrbitEnabled]);
 
     const handlePointerDown = (e: ThreeEvent<PointerEvent>, atomId: string) => {
         if (!interactive || mode === 'erase') return;
@@ -356,9 +363,10 @@ const SceneContent: React.FC<{
         dragPlane.current.setFromNormalAndCoplanarPoint(normal, atomPos);
         
         const intersectPoint = new THREE.Vector3();
-        e.ray.intersectPlane(dragPlane.current, intersectPoint);
+        // Capture intersection result
+        const hit = e.ray.intersectPlane(dragPlane.current, intersectPoint);
         
-        if (intersectPoint) {
+        if (hit) {
             dragOffset.current.subVectors(atomPos, intersectPoint);
         }
         
