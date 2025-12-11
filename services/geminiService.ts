@@ -25,11 +25,12 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
   const systemInstruction = `
     You are a 3D Computational Chemistry Engine.
     Calculate VSEPR 3D coordinates (x, y, z) for this molecule.
+    Return coordinates in Angstroms (typical bond lengths 1.0 - 2.0).
     
     CRITICAL RULES:
-    1. Do NOT put all atoms on a single plane or line.
-    2. Use realistic bond lengths (~3.5 units).
-    3. Tetrahedral centers (like C in CH4) must form a 3D tetrahedron, not a cross.
+    1. Do NOT put all atoms on a single plane or line unless chemically required (e.g. Benzene is flat, CO2 is linear).
+    2. Respect correct bond angles (Tetrahedral ~109.5, Trigonal Planar ~120).
+    3. Ensure ring structures (like Cyclohexane chair conformation) are 3D if applicable.
   `;
 
   try {
@@ -65,7 +66,11 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
       (data.atoms || []).map((a: any) => [String(a.id), a])
     );
 
-    const updatedAtoms = molecule.atoms.map(atom => {
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+    // First pass: Update coords and find bounds
+    let updatedAtoms = molecule.atoms.map(atom => {
       const coords = newCoords.get(atom.id);
       if (coords) {
         return { ...atom, x: Number(coords.x), y: Number(coords.y), z: Number(coords.z) };
@@ -73,11 +78,65 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
       return atom;
     });
 
-    // Run auto-layout to refine the physics even if AI gave coords
-    return autoLayoutMolecule({ ...molecule, atoms: updatedAtoms }, 0, 0);
+    // Heuristic: Check average bond length to determine scaling
+    // Renderer expects bonds around 3-4 units. Angstroms are ~1.5.
+    // We calculate current average bond length from the AI response.
+    let totalBondLen = 0;
+    let bondCount = 0;
+    
+    molecule.bonds.forEach(b => {
+      const a1 = updatedAtoms.find(a => a.id === b.sourceAtomId);
+      const a2 = updatedAtoms.find(a => a.id === b.targetAtomId);
+      if (a1 && a2) {
+        const d = Math.sqrt(Math.pow(a1.x - a2.x, 2) + Math.pow(a1.y - a2.y, 2) + Math.pow(a1.z - a2.z, 2));
+        if (d > 0.1) { // avoid zero length errors
+          totalBondLen += d;
+          bondCount++;
+        }
+      }
+    });
+
+    const avgLen = bondCount > 0 ? totalBondLen / bondCount : 0;
+    
+    // Target visual bond length for the renderer
+    const TARGET_VISUAL_BOND_LENGTH = 3.0; 
+    const scale = (avgLen > 0.1) ? (TARGET_VISUAL_BOND_LENGTH / avgLen) : 1;
+
+    // Second pass: Scale and Center
+    // Recalculate bounds after potential scaling
+    updatedAtoms = updatedAtoms.map(a => ({
+      ...a,
+      x: a.x * scale,
+      y: a.y * scale,
+      z: a.z * scale
+    }));
+
+    // Find center
+    let cx = 0, cy = 0, cz = 0;
+    updatedAtoms.forEach(a => {
+      cx += a.x;
+      cy += a.y;
+      cz += a.z;
+    });
+    cx /= updatedAtoms.length;
+    cy /= updatedAtoms.length;
+    cz /= updatedAtoms.length;
+
+    // Apply centering
+    updatedAtoms = updatedAtoms.map(a => ({
+      ...a,
+      x: a.x - cx,
+      y: a.y - cy,
+      z: a.z - cz
+    }));
+
+    // IMPORTANT: Return directly. Do NOT run autoLayoutMolecule() which uses a generic physics engine
+    // that might destroy the specific chemical geometry (like chair conformations) returned by the AI.
+    return { ...molecule, atoms: updatedAtoms };
 
   } catch (error) {
     console.error("3D Structure Error:", error);
+    // Fallback to physics engine if AI fails
     return autoLayoutMolecule(molecule, 400, 400); 
   }
 };
@@ -230,8 +289,8 @@ export const simulateReaction = async (reactants: Molecule[]): Promise<ReactionR
         }))
       };
 
-      // The layout service will see Z range is 0 and aggressively scramble it into 3D
-      // Then apply physics to relax it into the correct shape
+      // Since these are new products without coords, we MUST run autoLayout
+      // But we call it with a flag (implied by 0,0,0 coords) to do a full scramble
       return autoLayoutMolecule(rawMolecule, 600, 400);
     });
 

@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Canvas, useFrame, ThreeEvent, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, Html } from '@react-three/drei';
+import { OrbitControls, Text, Html, Environment, ContactShadows, Grid } from '@react-three/drei';
 import * as THREE from 'three';
 import { Molecule, AtomData, BondData } from '../types';
 import { getElementStyle, ELEMENT_DATA_MAP } from '../constants';
@@ -28,6 +28,7 @@ interface MoleculeRendererProps {
   showControls?: boolean;
   showMoleculeName?: boolean;
   autoFit?: boolean;
+  showGrid?: boolean;
 }
 
 // --- 3D Components ---
@@ -56,12 +57,15 @@ const AtomMesh: React.FC<{
         onPointerOut={onPointerOut}
       >
         <sphereGeometry args={[radius, 32, 32]} />
-        <meshStandardMaterial 
+        <meshPhysicalMaterial 
             color={mode === 'erase' && isHovered ? '#ef4444' : color} 
             emissive={isSelected ? '#4f46e5' : '#000000'}
-            emissiveIntensity={isSelected ? 0.5 : 0}
-            roughness={0.3}
-            metalness={0.2}
+            emissiveIntensity={isSelected ? 0.3 : 0}
+            roughness={0.15}
+            metalness={0.1}
+            clearcoat={1}
+            clearcoatRoughness={0.1}
+            reflectivity={0.5}
         />
       </mesh>
       <Text
@@ -281,6 +285,10 @@ const SceneContent: React.FC<{
     const dragPlane = useRef(new THREE.Plane());
     const dragOffset = useRef(new THREE.Vector3());
 
+    // Fix: Track if we are actually dragging (moving) to prevent accidental clicks
+    const isDraggingRef = useRef(false);
+    const pointerStartRef = useRef<{x: number, y: number}>({x: 0, y: 0});
+
     // Refs to hold latest values for the event listener closure
     const cameraRef = useRef(camera);
     const glRef = useRef(gl);
@@ -294,6 +302,13 @@ const SceneContent: React.FC<{
     const onGlobalPointerMove = useCallback((event: PointerEvent) => {
         if (!draggingIdRef.current) return;
         
+        // Detect movement to set isDragging flag
+        const dx = event.clientX - pointerStartRef.current.x;
+        const dy = event.clientY - pointerStartRef.current.y;
+        if (dx * dx + dy * dy > 25) { // 5px threshold squared
+             isDraggingRef.current = true;
+        }
+
         const canvasElement = glRef.current.domElement;
         const rect = canvasElement.getBoundingClientRect();
         
@@ -328,6 +343,10 @@ const SceneContent: React.FC<{
         
         const atom = molecule.atoms.find(a => a.id === atomId);
         if (!atom) return;
+
+        // Initialize drag state
+        isDraggingRef.current = false;
+        pointerStartRef.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
         
         const atomPos = new THREE.Vector3(atom.x, atom.y, atom.z || 0);
         draggingIdRef.current = atomId;
@@ -367,7 +386,8 @@ const SceneContent: React.FC<{
                     isHovered={hoveredAtomId === atom.id} 
                     mode={mode}
                     onClick={(e) => { 
-                        if (!draggingIdRef.current) {
+                        // Only click if we didn't drag
+                        if (!isDraggingRef.current) {
                            e.stopPropagation(); 
                            onAtomClick(atom.id); 
                         }
@@ -418,13 +438,17 @@ const MoleculeRenderer: React.FC<MoleculeRendererProps> = ({
   showControls = true,
   showMoleculeName = true,
   autoFit = false,
-  isAutoLayout = false // Not actively used inside R3F loop here, usually handled by parent
+  isAutoLayout = false, // Not actively used inside R3F loop here, usually handled by parent
+  showGrid
 }) => {
   const [internalMolecule, setInternalMolecule] = useState<Molecule>(molecule);
   const [selectedAtomId, setSelectedAtomId] = useState<string | null>(null);
   const [hoveredAtomId, setHoveredAtomId] = useState<string | null>(null);
   const [orbitEnabled, setOrbitEnabled] = useState(true);
   const orbitControlsRef = useRef<any>(null);
+
+  // Default to showing grid if interactive (builder mode), unless explicitly turned off
+  const shouldShowGrid = showGrid !== undefined ? showGrid : interactive;
 
   // Sync internal state
   useEffect(() => {
@@ -500,10 +524,37 @@ const MoleculeRenderer: React.FC<MoleculeRendererProps> = ({
         )}
 
         <Canvas camera={{ position: [0, 0, 15], fov: 50 }}>
-            <ambientLight intensity={0.6} />
+            <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} intensity={1.5} />
             <pointLight position={[-10, -10, -10]} intensity={0.5} />
             
+            {/* Realistic Environment Lighting */}
+            <Environment preset="city" />
+
+            {/* Optional Grid and Shadows for Depth Perception */}
+            {shouldShowGrid && (
+                <>
+                    <Grid 
+                        infiniteGrid 
+                        fadeDistance={50} 
+                        cellColor="#cbd5e1" 
+                        sectionColor="#94a3b8" 
+                        sectionSize={3} 
+                        cellSize={1} 
+                        position={[0, -2, 0]} 
+                    />
+                    <ContactShadows 
+                        opacity={0.6} 
+                        scale={20} 
+                        blur={2} 
+                        far={4} 
+                        resolution={256} 
+                        color="#000000" 
+                        position={[0, -2, 0]}
+                    />
+                </>
+            )}
+
             <SceneContent 
                 molecule={internalMolecule}
                 interactive={interactive}
@@ -536,7 +587,6 @@ const MoleculeRenderer: React.FC<MoleculeRendererProps> = ({
         {/* HUD Controls */}
         {showControls && (
             <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-1 bg-white/90 p-1 rounded-lg shadow border border-slate-200">
-               {/* Controls handled natively by OrbitControls, these could be custom triggers or removed */}
                <div className="text-[10px] text-slate-400 text-center px-1">Rotate / Zoom</div>
             </div>
         )}
