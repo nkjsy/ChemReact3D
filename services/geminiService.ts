@@ -35,7 +35,7 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-pro-preview",
       contents: `Structure for:\nAtoms: ${atomList}\nBonds: ${bondList}`,
       config: {
         systemInstruction,
@@ -149,7 +149,7 @@ export const identifyMolecule = async (molecule: Molecule): Promise<string> => {
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-pro-preview",
       contents: `Atoms: ${atomList}\nBonds: ${bondList}\nFormula Hint: ${formula}`,
       config: {
         systemInstruction,
@@ -193,7 +193,7 @@ export const simulateReaction = async (reactants: Molecule[]): Promise<ReactionR
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-pro-preview",
       contents: `Reactants: ${reactantDescriptions}`,
       config: {
         systemInstruction,
