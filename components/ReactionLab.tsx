@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Molecule, ReactionResult } from '../types';
 import MoleculeRenderer from './MoleculeRenderer';
 import { simulateReaction } from '../services/geminiService';
@@ -21,6 +21,11 @@ const ReactionLab: React.FC<ReactionLabProps> = ({ savedMolecules, onSaveProduct
   // Save Product State
   const [editingProduct, setEditingProduct] = useState<Molecule | null>(null);
   const [newName, setNewName] = useState('');
+
+  // Effect to clean up reactants if they are deleted from inventory
+  useEffect(() => {
+    setReactants(prev => prev.filter(r => savedMolecules.some(sm => sm.id === r.id)));
+  }, [savedMolecules]);
 
   const toggleReactant = (mol: Molecule) => {
     if (reactants.find(r => r.id === mol.id)) {
@@ -151,14 +156,16 @@ const ReactionLab: React.FC<ReactionLabProps> = ({ savedMolecules, onSaveProduct
                   )}
 
                   <button 
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      e.preventDefault();
                       onDelete(mol.id);
                     }}
-                    className="absolute top-1 left-1 p-1 bg-white/90 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-sm border border-slate-100 z-10"
+                    className="absolute top-1 left-1 p-1.5 bg-white text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-full shadow-sm z-50 transition-all hover:scale-110 active:scale-95"
                     title="Delete"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={16} className="pointer-events-none" />
                   </button>
                 </div>
               );

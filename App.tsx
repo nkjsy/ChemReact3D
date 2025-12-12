@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Molecule } from './types';
 import Builder from './components/Builder';
@@ -34,14 +35,11 @@ const App: React.FC = () => {
       // Add new molecule
       return [...prev, mol];
     });
-    // Optional: Switch to lab automatically after save?
-    // setActiveTab(Tab.LAB); 
   };
 
   const handleDeleteMolecule = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this molecule?")) {
-      setSavedMolecules(prev => prev.filter(m => m.id !== id));
-    }
+    // Removing window.confirm for now to ensure deletion works reliably in all contexts
+    setSavedMolecules(prev => prev.filter(m => m.id !== id));
   };
 
   return (

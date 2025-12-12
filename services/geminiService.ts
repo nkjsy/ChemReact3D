@@ -35,7 +35,7 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash",
       contents: `Structure for:\nAtoms: ${atomList}\nBonds: ${bondList}`,
       config: {
         systemInstruction,
@@ -66,10 +66,6 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
       (data.atoms || []).map((a: any) => [String(a.id), a])
     );
 
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-
-    // First pass: Update coords and find bounds
     let updatedAtoms = molecule.atoms.map(atom => {
       const coords = newCoords.get(atom.id);
       if (coords) {
@@ -78,18 +74,15 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
       return atom;
     });
 
-    // Heuristic: Check average bond length to determine scaling
-    // Renderer expects bonds around 3-4 units. Angstroms are ~1.5.
-    // We calculate current average bond length from the AI response.
+    // Scale check
     let totalBondLen = 0;
     let bondCount = 0;
-    
     molecule.bonds.forEach(b => {
       const a1 = updatedAtoms.find(a => a.id === b.sourceAtomId);
       const a2 = updatedAtoms.find(a => a.id === b.targetAtomId);
       if (a1 && a2) {
         const d = Math.sqrt(Math.pow(a1.x - a2.x, 2) + Math.pow(a1.y - a2.y, 2) + Math.pow(a1.z - a2.z, 2));
-        if (d > 0.1) { // avoid zero length errors
+        if (d > 0.1) {
           totalBondLen += d;
           bondCount++;
         }
@@ -97,13 +90,9 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
     });
 
     const avgLen = bondCount > 0 ? totalBondLen / bondCount : 0;
-    
-    // Target visual bond length for the renderer
     const TARGET_VISUAL_BOND_LENGTH = 3.0; 
     const scale = (avgLen > 0.1) ? (TARGET_VISUAL_BOND_LENGTH / avgLen) : 1;
 
-    // Second pass: Scale and Center
-    // Recalculate bounds after potential scaling
     updatedAtoms = updatedAtoms.map(a => ({
       ...a,
       x: a.x * scale,
@@ -111,18 +100,11 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
       z: a.z * scale
     }));
 
-    // Find center
+    // Center
     let cx = 0, cy = 0, cz = 0;
-    updatedAtoms.forEach(a => {
-      cx += a.x;
-      cy += a.y;
-      cz += a.z;
-    });
-    cx /= updatedAtoms.length;
-    cy /= updatedAtoms.length;
-    cz /= updatedAtoms.length;
+    updatedAtoms.forEach(a => { cx += a.x; cy += a.y; cz += a.z; });
+    cx /= updatedAtoms.length; cy /= updatedAtoms.length; cz /= updatedAtoms.length;
 
-    // Apply centering
     updatedAtoms = updatedAtoms.map(a => ({
       ...a,
       x: a.x - cx,
@@ -130,13 +112,16 @@ export const getAccurate3DStructure = async (molecule: Molecule): Promise<Molecu
       z: a.z - cz
     }));
 
-    // IMPORTANT: Return directly. Do NOT run autoLayoutMolecule() which uses a generic physics engine
-    // that might destroy the specific chemical geometry (like chair conformations) returned by the AI.
     return { ...molecule, atoms: updatedAtoms };
 
-  } catch (error) {
-    console.error("3D Structure Error:", error);
-    // Fallback to physics engine if AI fails
+  } catch (error: any) {
+    // Graceful fallback for quota limits or other errors
+    if (error.status === 429 || error.message?.includes('429')) {
+      console.warn("Gemini Quota Exceeded for 3D layout. Using local physics engine.");
+    } else {
+      console.error("3D Structure Error:", error);
+    }
+    // Fallback to physics engine
     return autoLayoutMolecule(molecule, 400, 400); 
   }
 };
@@ -164,7 +149,7 @@ export const identifyMolecule = async (molecule: Molecule): Promise<string> => {
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash",
       contents: `Atoms: ${atomList}\nBonds: ${bondList}\nFormula Hint: ${formula}`,
       config: {
         systemInstruction,
@@ -201,13 +186,14 @@ export const simulateReaction = async (reactants: Molecule[]): Promise<ReactionR
     2. Balance the equation.
     3. Generate product structures.
     
-    IMPORTANT: Return a connectivity graph (atoms/bonds). 
-    The 'x, y, z' coordinates are optional but if provided, must not be linear for 3D molecules.
+    CRITICAL: 
+    - Provide an ESTIMATE of the 3D coordinates (x, y, z) for the product atoms to form a valid chemical structure.
+    - If unsure about coordinates, just provide valid connectivity and the system will auto-layout.
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-2.5-flash",
       contents: `Reactants: ${reactantDescriptions}`,
       config: {
         systemInstruction,
@@ -230,6 +216,9 @@ export const simulateReaction = async (reactants: Molecule[]): Promise<ReactionR
                       properties: {
                         id: { type: Type.STRING },
                         element: { type: Type.STRING },
+                        x: { type: Type.NUMBER, description: "Estimated X coordinate" },
+                        y: { type: Type.NUMBER, description: "Estimated Y coordinate" },
+                        z: { type: Type.NUMBER, description: "Estimated Z coordinate" }
                       },
                       required: ["id", "element"]
                     }
@@ -261,25 +250,29 @@ export const simulateReaction = async (reactants: Molecule[]): Promise<ReactionR
     
     const data = JSON.parse(text);
 
-    const products: Molecule[] = (data.products || []).map((p: any, index: number) => {
+    // Process products synchronously to save API calls
+    const products = (data.products || []).map((p: any, index: number) => {
       const validAtoms = (p.atoms || []).filter((a: any) => a.id && a.element);
       const atomIdSet = new Set(validAtoms.map((a: any) => String(a.id)));
 
       const validBonds = (p.bonds || []).filter((b: any) => 
         atomIdSet.has(String(b.source)) && atomIdSet.has(String(b.target))
       );
+      
+      // Check if the AI provided usable coordinates
+      const hasCoords = validAtoms.some((a: any) => 
+        (a.x !== undefined && a.x !== 0) || (a.y !== undefined && a.y !== 0)
+      );
 
-      // Create raw molecule with NO coordinates initially (0,0,0)
-      // This triggers the "needsScramble" logic in autoLayoutMolecule
-      const rawMolecule = {
+      const rawMolecule: Molecule = {
         id: `product-${index}-${Date.now()}`,
         name: p.name || "Product",
         atoms: validAtoms.map((a: any) => ({
           id: String(a.id),
           element: a.element as ElementType, 
-          x: 0, 
-          y: 0,
-          z: 0
+          x: Number(a.x) || 0, 
+          y: Number(a.y) || 0,
+          z: Number(a.z) || 0
         })),
         bonds: validBonds.map((b: any, bIndex: number) => ({
           id: `bond-${index}-${bIndex}`,
@@ -289,9 +282,24 @@ export const simulateReaction = async (reactants: Molecule[]): Promise<ReactionR
         }))
       };
 
-      // Since these are new products without coords, we MUST run autoLayout
-      // But we call it with a flag (implied by 0,0,0 coords) to do a full scramble
-      return autoLayoutMolecule(rawMolecule, 600, 400);
+      if (hasCoords) {
+        // If Gemini provided coordinates in the single shot, use them directly (after a quick centering)
+        // This avoids N extra API calls
+        let cx = 0, cy = 0, cz = 0;
+        rawMolecule.atoms.forEach(a => { cx += a.x; cy += a.y; cz += a.z; });
+        cx /= rawMolecule.atoms.length || 1; 
+        cy /= rawMolecule.atoms.length || 1; 
+        cz /= rawMolecule.atoms.length || 1;
+        
+        rawMolecule.atoms = rawMolecule.atoms.map(a => ({
+          ...a, x: a.x - cx, y: a.y - cy, z: a.z - cz
+        }));
+        
+        return rawMolecule;
+      } else {
+        // Fallback to local physics engine immediately to save quota
+        return autoLayoutMolecule(rawMolecule, 600, 400);
+      }
     });
 
     return {
@@ -300,7 +308,10 @@ export const simulateReaction = async (reactants: Molecule[]): Promise<ReactionR
       products
     };
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error.status === 429) {
+      throw new Error("API Quota exceeded. Please try again later.");
+    }
     console.error("Gemini Error:", error);
     throw new Error("Failed to simulate reaction. Please try again.");
   }

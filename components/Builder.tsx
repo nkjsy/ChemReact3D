@@ -331,21 +331,21 @@ const Builder: React.FC<BuilderProps> = ({ onSave, savedMolecules, onDelete }) =
                         <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 font-bold border border-indigo-100">1</div>
                         <div>
                           <span className="font-semibold text-slate-800 block mb-0.5">Add Atom</span>
-                          Click any element in the toolbar.
+                          Click any element in the toolbar or periodic table.
                         </div>
                       </li>
                       <li className="flex gap-3 text-xs text-slate-600">
                         <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 font-bold border border-indigo-100">2</div>
                         <div>
                           <span className="font-semibold text-slate-800 block mb-0.5">Create Bond</span>
-                          Click one atom, then click another.
+                          Click one atom, then click another to connect.
                         </div>
                       </li>
                       <li className="flex gap-3 text-xs text-slate-600">
                         <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 font-bold border border-indigo-100">3</div>
                         <div>
-                          <span className="font-semibold text-slate-800 block mb-0.5">Edit Bond Type</span>
-                          Click an existing bond to cycle (Single → Double → Triple).
+                          <span className="font-semibold text-slate-800 block mb-0.5">Change Bond Type</span>
+                          Click the connected atom pair again to cycle (Single → Double → Triple).
                         </div>
                       </li>
                    </ul>
@@ -462,14 +462,16 @@ const Builder: React.FC<BuilderProps> = ({ onSave, savedMolecules, onDelete }) =
                              {mol.atoms.length} atoms
                            </div>
                            <button 
+                             type="button"
                              onClick={(e) => {
                                e.stopPropagation();
+                               e.preventDefault();
                                onDelete(mol.id);
                              }}
-                             className="absolute top-2 right-2 p-1.5 bg-white text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-sm border border-slate-100"
+                             className="absolute top-2 right-2 p-1.5 bg-white text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full hover:shadow-sm border border-transparent hover:border-red-200 transition-all z-50"
                              title="Delete Molecule"
                            >
-                             <Trash2 size={16} />
+                             <Trash2 size={16} className="pointer-events-none" />
                            </button>
                         </div>
                       ))}

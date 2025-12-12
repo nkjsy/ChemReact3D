@@ -5,6 +5,7 @@ import { OrbitControls, Text, Html, Environment, ContactShadows, Grid } from '@r
 import * as THREE from 'three';
 import { Molecule, AtomData, BondData } from '../types';
 import { getElementStyle, ELEMENT_DATA_MAP } from '../constants';
+import { autoLayoutMolecule } from '../services/layoutService';
 import { Atom as AtomIcon } from 'lucide-react';
 import { ThreeElements } from '@react-three/fiber';
 
@@ -446,7 +447,7 @@ const MoleculeRenderer: React.FC<MoleculeRendererProps> = ({
   showControls = true,
   showMoleculeName = true,
   autoFit = false,
-  isAutoLayout = false, // Not actively used inside R3F loop here, usually handled by parent
+  isAutoLayout = false, 
   showGrid
 }) => {
   const [internalMolecule, setInternalMolecule] = useState<Molecule>(molecule);
@@ -458,10 +459,16 @@ const MoleculeRenderer: React.FC<MoleculeRendererProps> = ({
   // Default to showing grid if interactive (builder mode), unless explicitly turned off
   const shouldShowGrid = showGrid !== undefined ? showGrid : interactive;
 
-  // Sync internal state
+  // Sync internal state with auto layout handling
   useEffect(() => {
-    setInternalMolecule(molecule);
-  }, [molecule]);
+    if (isAutoLayout) {
+        // Apply physics-based layout to clean up structure for display
+        const layouted = autoLayoutMolecule(molecule, 400, 400);
+        setInternalMolecule(layouted);
+    } else {
+        setInternalMolecule(molecule);
+    }
+  }, [molecule, isAutoLayout]);
 
   const handleAtomUpdate = (atomId: string, pos: THREE.Vector3) => {
      if (!onUpdate) return;
